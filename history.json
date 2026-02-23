@@ -1,1 +1,98 @@
-[]
+[
+  {
+    "round": 1,
+    "date": "Feb 22, 2026",
+    "entries": [
+      {
+        "name": "DEGENsメDANSS26",
+        "prize": "Legendary",
+        "tierClass": "legendary"
+      },
+      {
+        "name": "Yansi",
+        "prize": "Epic",
+        "tierClass": "epic"
+      },
+      {
+        "name": "Vralaisc",
+        "prize": "Epic",
+        "tierClass": "epic"
+      },
+      {
+        "name": "Karou5",
+        "prize": "Elite",
+        "tierClass": "elite"
+      },
+      {
+        "name": "Renn Farmer",
+        "prize": "Elite",
+        "tierClass": "elite"
+      },
+      {
+        "name": "Annuki",
+        "prize": "Elite",
+        "tierClass": "elite"
+      },
+      {
+        "name": "Bidish",
+        "prize": "Elite",
+        "tierClass": "elite"
+      },
+      {
+        "name": "elx",
+        "prize": "Elite",
+        "tierClass": "elite"
+      },
+      {
+        "name": "TSUNAMI",
+        "prize": "Advanced",
+        "tierClass": "advanced"
+      },
+      {
+        "name": "KakToTakUA",
+        "prize": "Advanced",
+        "tierClass": "advanced"
+      },
+      {
+        "name": "BIG DUMPIN",
+        "prize": "Advanced",
+        "tierClass": "advanced"
+      },
+      {
+        "name": "HeyxGuy",
+        "prize": "Advanced",
+        "tierClass": "advanced"
+      },
+      {
+        "name": "Brandon64",
+        "prize": "Advanced",
+        "tierClass": "advanced"
+      },
+      {
+        "name": "Felis",
+        "prize": "Advanced",
+        "tierClass": "advanced"
+      },
+      {
+        "name": "verlasic",
+        "prize": "Advanced",
+        "tierClass": "advanced"
+      },
+      {
+        "name": "bee BOAH alt",
+        "prize": "Advanced",
+        "tierClass": "advanced"
+      },
+      {
+        "name": "big dumplin",
+        "prize": "Advanced",
+        "tierClass": "advanced"
+      },
+      {
+        "name": "Heli otter",
+        "prize": "Advanced",
+        "tierClass": "advanced"
+      }
+    ]
+  }
+]
