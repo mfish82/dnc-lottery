@@ -1,12 +1,76 @@
 <!DOCTYPE html>
+<!--
+  ╔══════════════════════════════════════════════════════════════════╗
+  ║         DEGENS N' COFFEE — ALLIANCE LOTTERY SYSTEM              ║
+  ║                        index.html                               ║
+  ╠══════════════════════════════════════════════════════════════════╣
+  ║  WHAT THIS FILE IS:                                             ║
+  ║  A single-file web app for running weekly Discord community     ║
+  ║  lotteries. Everything — styles, layout, and logic — lives      ║
+  ║  in this one HTML file. No build tools or server required.      ║
+  ║                                                                 ║
+  ║  HOW IT WORKS:                                                  ║
+  ║  1. Connects to a GitHub repo via the GitHub Contents API       ║
+  ║  2. Reads participants.json (list of eligible names)            ║
+  ║  3. Reads history.json (past round winner records)              ║
+  ║  4. Runs a Fisher-Yates shuffle to pick fair random winners     ║
+  ║  5. Writes results back to GitHub automatically                 ║
+  ║                                                                 ║
+  ║  FILES IN THE REPO:                                             ║
+  ║    index.html       → This file (the full app)                  ║
+  ║    participants.json → Array of participant name strings        ║
+  ║    history.json     → Array of past round result objects        ║
+  ║                                                                 ║
+  ║  SETUP:                                                         ║
+  ║  Click ⚙ Settings and enter:                                    ║
+  ║    - GitHub Username  (e.g. mfisher30)                          ║
+  ║    - Repository Name  (e.g. dnc-lottery)                        ║
+  ║    - Branch           (default: main)                           ║
+  ║    - Personal Access Token with Contents: Read & Write          ║
+  ║                                                                 ║
+  ║  TO EDIT PRIZE TIERS OR DEFAULTS:                               ║
+  ║  Search for "TIER DEFINITIONS" in the <script> section          ║
+  ║  and edit the TIERS array (id, icon, label, qty).               ║
+  ╚══════════════════════════════════════════════════════════════════╝
+-->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Degens n' Coffee — Alliance Lottery</title>
 <style>
+/*
+ * ── FONTS ───────────────────────────────────────────────────────────
+ * Cinzel      → decorative serif used for panel titles and badges
+ * Rajdhani    → primary UI font for labels, buttons, names
+ * Share Tech Mono → monospace used for numbers, codes, and sync status
+ * Loaded from Google Fonts (requires internet connection).
+ */
 @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap');
 
+/*
+ * ── DESIGN TOKENS (CSS VARIABLES) ──────────────────────────────────
+ * All colors are defined here as CSS custom properties so you can
+ * retheme the entire app by editing just this block.
+ *
+ * TO CHANGE A COLOR: Edit the value after the colon.
+ * Example: change --gold:#c8973a to --gold:#ff9900 for a brighter gold.
+ *
+ * Background layers (darkest → lightest):
+ *   --bg-base   → page/panel background
+ *   --bg-card   → card surfaces
+ *   --bg-card2  → slightly lighter card (hover states, inputs)
+ *
+ * Border layers:
+ *   --border        → subtle dividers
+ *   --border-bright → slightly more visible borders
+ *
+ * Prize tier accent colors (used for left-edge stripes, badges, dots):
+ *   --legendary → gold
+ *   --epic      → purple
+ *   --elite     → blue
+ *   --advanced  → green
+ */
 :root {
   --bg-base:#0a0c12;--bg-card:#141720;--bg-card2:#1a1f2e;
   --border:#1e2535;--border-bright:#2a3045;
@@ -18,22 +82,44 @@
   --text-primary:#e8eaf0;--text-secondary:#8a90a8;--text-dim:#4a5068;
   --legendary:#c8973a;--epic:#9b6ef0;--elite:#3a9fd4;--advanced:#2db870;
 }
+
+/* ── RESET & BASE ───────────────────────────────────────────────── */
 *{margin:0;padding:0;box-sizing:border-box;}
+/* Lock the page to full viewport — no page scroll, panels scroll internally */
 html,body{height:100%;overflow:hidden;}
 body{background:var(--bg-base);color:var(--text-primary);font-family:'Rajdhani',sans-serif;display:flex;flex-direction:column;}
+
+/*
+ * body::before was the original grain/noise overlay.
+ * Set to display:none to remove it. To restore the subtle texture,
+ * change to display:block and restore the background-image SVG.
+ */
 body::before{display:none;}
+
+/* Thin custom scrollbar for any scrollable panel */
 ::-webkit-scrollbar{width:3px;}::-webkit-scrollbar-thumb{background:var(--border-bright);border-radius:2px;}
 
-/* TITLEBAR */
+/* ── TITLEBAR ───────────────────────────────────────────────────── */
+/* Fixed top bar with logo, sync status, and settings button */
 .titlebar{background:linear-gradient(90deg,#080a10,#0d1020,#0a0d18);border-bottom:1px solid var(--border);display:flex;align-items:stretch;height:52px;flex-shrink:0;position:relative;}
+/* Decorative gold gradient line along bottom of titlebar */
 .titlebar::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--gold-dim),transparent);}
 .tb-logo{display:flex;align-items:center;gap:10px;padding:0 18px;border-right:1px solid var(--border);flex-shrink:0;}
 .logo-icon{width:30px;height:30px;background:linear-gradient(135deg,var(--gold),#5a3f15);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 0 14px rgba(200,151,58,.35);}
 .logo-text{font-family:'Cinzel',serif;font-size:12px;font-weight:600;color:var(--gold-light);line-height:1.3;}
 .logo-text small{display:block;font-size:9px;color:var(--text-dim);font-family:'Share Tech Mono',monospace;letter-spacing:2px;}
 .tb-right{margin-left:auto;display:flex;align-items:center;gap:8px;padding:0 14px;}
+/* Generic small button used in titlebar and settings modal action row */
 .btn-tb{background:var(--bg-card2);border:1px solid var(--border-bright);color:var(--text-secondary);font-family:'Rajdhani',sans-serif;font-weight:700;font-size:10px;letter-spacing:1px;text-transform:uppercase;border-radius:5px;padding:5px 12px;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:5px;white-space:nowrap;}
 .btn-tb:hover{border-color:var(--gold-dim);color:var(--gold);}
+
+/*
+ * Sync indicator — shows GitHub connection state.
+ * The dot color is controlled by JS via setSyncStatus():
+ *   .ok      → green (connected and saved)
+ *   .err     → red (connection or save error)
+ *   .loading → gold pulsing (currently syncing)
+ */
 .sync-indicator{display:flex;align-items:center;gap:5px;font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-dim);letter-spacing:1px;}
 .sync-dot{width:6px;height:6px;border-radius:50%;background:var(--text-dim);transition:all .3s;flex-shrink:0;}
 .sync-dot.ok{background:var(--green-light);box-shadow:0 0 6px var(--green-light);}
@@ -41,47 +127,78 @@ body::before{display:none;}
 .sync-dot.loading{background:var(--gold);animation:pdot 1s ease-in-out infinite;}
 @keyframes pdot{0%,100%{opacity:.4;}50%{opacity:1;}}
 
-/* LAYOUT */
+/* ── THREE-COLUMN LAYOUT ────────────────────────────────────────── */
+/*
+ * The main app is a CSS Grid with 3 fixed-width columns:
+ *   260px  → Left panel  (participant list)
+ *   1fr    → Center panel (prize config + results)
+ *   280px  → Right panel (winner history)
+ *
+ * To resize a panel, change its pixel value in grid-template-columns.
+ */
 .app-body{display:grid;grid-template-columns:260px 1fr 280px;flex:1;min-height:0;overflow:hidden;}
 
-/* PANEL */
+/* ── SHARED PANEL STYLES ────────────────────────────────────────── */
 .panel{display:flex;flex-direction:column;overflow:hidden;}
 .panel-left{border-right:1px solid var(--border);}
 .panel-right{border-left:1px solid var(--border);}
 .panel-hdr{padding:11px 13px 9px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
 .panel-title{font-family:'Cinzel',serif;font-size:10px;letter-spacing:2px;color:var(--text-secondary);text-transform:uppercase;}
+/* Small pill badge — shows counts in panel headers */
 .badge{background:var(--bg-card2);border:1px solid var(--border-bright);color:var(--text-secondary);font-family:'Share Tech Mono',monospace;font-size:10px;padding:2px 8px;border-radius:10px;}
 .badge.gold{border-color:var(--gold-dim);color:var(--gold);background:rgba(200,151,58,.08);}
 
-/* LEFT */
+/* ── LEFT PANEL: PARTICIPANTS ───────────────────────────────────── */
 .search-wrap{padding:8px 8px 4px;flex-shrink:0;}
 .search-bar{background:var(--bg-card2);border:1px solid var(--border-bright);border-radius:5px;display:flex;align-items:center;gap:6px;padding:6px 9px;}
 .search-bar input{background:none;border:none;outline:none;color:var(--text-primary);font-family:'Rajdhani',sans-serif;font-size:13px;flex:1;min-width:0;}
 .search-bar input::placeholder{color:var(--text-dim);}
+
+/* Scrollable list of participant rows */
 .participant-scroll{flex:1;overflow-y:auto;padding:2px 5px;}
 .participant-item{display:flex;align-items:center;gap:7px;padding:5px 7px;border-radius:5px;transition:background .15s;}
 .participant-item:hover{background:var(--bg-card2);}
+/* .won makes a participant appear faded — applied after they win a prize this round */
 .participant-item.won{opacity:.38;}
+/* Color avatar circle — letter initial with a color derived from the name hash */
 .p-avatar{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;flex-shrink:0;}
 .p-name{font-size:13px;font-weight:500;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+/* "WON" tag shown inline next to names that have won this round */
 .p-won-tag{font-size:8px;font-family:'Share Tech Mono',monospace;color:var(--gold-dim);letter-spacing:1px;flex-shrink:0;}
+/* Delete button (✕) — only visible on hover via opacity transition */
 .p-del{color:var(--text-dim);font-size:11px;opacity:0;cursor:pointer;padding:2px 4px;transition:all .15s;flex-shrink:0;border:none;background:none;}
 .participant-item:hover .p-del{opacity:1;}
 .p-del:hover{color:var(--red-light);}
 .list-empty{padding:20px 12px;text-align:center;color:var(--text-dim);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;line-height:1.8;}
+
+/* Add-participant bar at the bottom of the left panel */
 .add-area{padding:7px;border-top:1px solid var(--border);flex-shrink:0;}
 .add-row{display:flex;gap:5px;}
+/* Shared input style — used for add-name, custom prize name, qty, etc. */
 .input-field{flex:1;background:var(--bg-card2);border:1px solid var(--border-bright);border-radius:5px;color:var(--text-primary);font-family:'Rajdhani',sans-serif;font-size:13px;padding:6px 9px;outline:none;transition:border-color .2s;min-width:0;}
 .input-field:focus{border-color:var(--gold-dim);}
 .input-field::placeholder{color:var(--text-dim);}
+/* Gold + button for adding a new participant */
 .btn-add{width:30px;height:30px;background:rgba(200,151,58,.1);border:1px solid var(--gold-dim);border-radius:5px;color:var(--gold);font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0;}
 .btn-add:hover{background:rgba(200,151,58,.22);}
 
-/* CENTER */
+/* ── CENTER PANEL ───────────────────────────────────────────────── */
 .panel-center{background:var(--bg-base);display:flex;flex-direction:column;overflow:hidden;}
+
+/*
+ * Prize configuration area — contains tier toggles and custom prize input.
+ * TO ADD OR REMOVE DEFAULT TIERS: edit the TIERS array in the <script>.
+ * TO CHANGE DEFAULT WINNER COUNTS: edit the qty values in the TIERS array.
+ */
 .prize-config{padding:11px 14px;border-bottom:1px solid var(--border);flex-shrink:0;}
 .config-label{font-size:9px;letter-spacing:2px;color:var(--text-dim);text-transform:uppercase;font-family:'Share Tech Mono',monospace;margin-bottom:7px;}
 .tiers-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:9px;}
+
+/*
+ * Prize tier pill buttons — each can be toggled on/off.
+ * The colored left edge stripe (::before) indicates the tier color.
+ * Adding .off class via JS dims the tier to show it's disabled.
+ */
 .prize-tier{display:flex;align-items:center;gap:5px;background:var(--bg-card);border:1px solid var(--border-bright);border-radius:6px;padding:6px 10px;cursor:pointer;transition:all .2s;position:relative;overflow:hidden;user-select:none;}
 .prize-tier::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;}
 .prize-tier.legendary::before{background:var(--legendary);}
@@ -89,8 +206,9 @@ body::before{display:none;}
 .prize-tier.elite::before{background:var(--elite);}
 .prize-tier.advanced::before{background:var(--advanced);}
 .prize-tier:hover{background:var(--bg-card2);}
-.prize-tier.off{opacity:.28;}
+.prize-tier.off{opacity:.28;}  /* Dimmed = toggled off, won't be included in draw */
 .prize-tier:active{transform:scale(.97);}
+/* Checkbox visual inside each tier pill */
 .tier-check{width:13px;height:13px;border-radius:3px;border:1.5px solid var(--border-bright);display:flex;align-items:center;justify-content:center;font-size:8px;flex-shrink:0;}
 .prize-tier:not(.off) .tier-check{background:rgba(200,151,58,.15);border-color:var(--gold-dim);color:var(--gold);}
 .tier-icon{font-size:13px;}
@@ -100,18 +218,23 @@ body::before{display:none;}
 .prize-tier.elite .tier-name{color:var(--elite);}
 .prize-tier.advanced .tier-name{color:var(--advanced);}
 .tier-qty-lbl{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--text-dim);}
+
+/* Custom prize row — lets you add a one-off tier with any name/count */
 .custom-row{display:flex;align-items:center;gap:6px;}
 .custom-label{font-size:9px;color:var(--text-dim);letter-spacing:1.5px;text-transform:uppercase;white-space:nowrap;font-family:'Share Tech Mono',monospace;}
 .qty-input{width:44px;text-align:center;padding:5px 4px;font-size:12px;}
 .btn-sm-add{width:28px;height:28px;background:var(--bg-card2);border:1px solid var(--border-bright);border-radius:5px;color:var(--text-secondary);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0;}
 .btn-sm-add:hover{border-color:var(--gold-dim);color:var(--gold);}
+/* Chips showing added custom prizes — each has its own ✕ remove button */
 .custom-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;}
 .custom-chip{display:flex;align-items:center;gap:4px;background:var(--bg-card2);border:1px solid var(--border-bright);border-radius:12px;padding:3px 8px;font-size:11px;color:var(--text-secondary);}
 .cc-del{cursor:pointer;color:var(--text-dim);font-size:10px;margin-left:3px;border:none;background:none;line-height:1;}
 .cc-del:hover{color:var(--red-light);}
 
-/* RUN BAR */
+/* ── RUN BAR ────────────────────────────────────────────────────── */
+/* Row containing the Run Lottery button, New Round, and round info */
 .run-bar{padding:11px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0;}
+/* Pulsing gold glow animation on the Run Lottery button */
 @keyframes glow{0%,100%{box-shadow:0 0 16px rgba(200,151,58,.2);}50%{box-shadow:0 0 34px rgba(200,151,58,.5);}}
 .btn-run{background:linear-gradient(135deg,#7a5515,var(--gold),#7a5515);background-size:200%;color:#0a0c12;font-family:'Rajdhani',sans-serif;font-weight:800;font-size:13px;letter-spacing:2.5px;text-transform:uppercase;border:none;border-radius:7px;padding:10px 26px;cursor:pointer;transition:all .3s;animation:glow 3s ease-in-out infinite;}
 .btn-run:hover{background-position:right;box-shadow:0 0 40px rgba(200,151,58,.55);transform:translateY(-1px);}
@@ -123,14 +246,23 @@ body::before{display:none;}
 .run-sub{font-size:9px;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase;margin-top:2px;}
 .eligible-lbl{font-size:10px;color:var(--text-dim);font-family:'Share Tech Mono',monospace;margin-top:2px;}
 
-/* RESULTS */
+/* ── RESULTS AREA ───────────────────────────────────────────────── */
+/* Fills the remaining center-panel space and scrolls if needed */
 .results-area{flex:1;overflow-y:auto;padding:14px;}
+/* Placeholder shown before any lottery is run */
 .results-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:10px;color:var(--text-dim);text-align:center;}
 .results-empty .big-icon{font-size:48px;opacity:.25;}
 .results-empty p{font-size:11px;letter-spacing:2px;text-transform:uppercase;}
+/* Grid of result cards — one card per prize tier */
 .results-grid{display:grid;gap:10px;}
+/*
+ * Result cards animate in using CSS transitions.
+ * They start invisible (opacity:0, translateY) and become visible
+ * when JS adds the .visible class after a staggered delay.
+ */
 .result-card{background:var(--bg-card);border:1px solid var(--border-bright);border-radius:9px;overflow:hidden;position:relative;opacity:0;transform:translateY(14px);transition:opacity .45s ease,transform .45s ease;}
 .result-card.visible{opacity:1;transform:translateY(0);}
+/* Colored left edge stripe on result cards (same as tier pills) */
 .result-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;}
 .result-card.legendary::before{background:linear-gradient(180deg,var(--gold-light),var(--gold-dim));}
 .result-card.epic::before{background:linear-gradient(180deg,var(--purple-light),var(--purple));}
@@ -146,20 +278,24 @@ body::before{display:none;}
 .custom-tier .card-badge{color:var(--text-secondary);border-color:var(--border-bright);background:var(--bg-card2);}
 .card-count{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-dim);margin-left:auto;}
 .card-winners{padding:10px 16px;display:flex;flex-wrap:wrap;gap:6px;}
+/* Individual winner pill chips — animate in one-by-one after the card appears */
 .winner-chip{display:flex;align-items:center;gap:5px;background:var(--bg-card2);border:1px solid var(--border-bright);border-radius:16px;padding:4px 10px 4px 6px;opacity:0;transform:scale(.88);transition:opacity .3s ease,transform .3s ease;}
 .winner-chip.visible{opacity:1;transform:scale(1);}
 .chip-avatar{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;flex-shrink:0;}
 .chip-name{font-size:12px;font-weight:600;}
 
-/* DISCORD BAR */
+/* ── DISCORD BAR ────────────────────────────────────────────────── */
+/* Bottom bar of the center panel — copy results to clipboard for Discord */
 .discord-bar{padding:8px 14px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0;}
 .btn-discord{background:linear-gradient(135deg,#4752c4,#5865f2);color:#fff;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;border:none;border-radius:5px;padding:7px 16px;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:6px;}
 .btn-discord:hover{opacity:.85;transform:translateY(-1px);}
 .btn-discord:disabled{opacity:.3;cursor:not-allowed;transform:none;}
+/* "✓ Copied!" confirmation text — fades in/out after clipboard copy */
 .copy-confirm{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--green-light);letter-spacing:1px;opacity:0;transition:opacity .3s;}
 .copy-confirm.show{opacity:1;}
 
-/* RIGHT: HISTORY */
+/* ── RIGHT PANEL: WINNER HISTORY ────────────────────────────────── */
+/* Persistent log of all past rounds, loaded from history.json */
 .history-scroll{flex:1;overflow-y:auto;padding:4px 6px;}
 .history-round-block{margin-bottom:10px;}
 .history-round-hdr{display:flex;align-items:center;gap:5px;padding:5px 6px;border-bottom:1px solid var(--border);margin-bottom:3px;}
@@ -168,6 +304,7 @@ body::before{display:none;}
 .hr-date{margin-left:auto;font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--text-dim);}
 .history-entry{display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:4px;transition:background .15s;}
 .history-entry:hover{background:var(--bg-card2);}
+/* Colored dot indicating which prize tier each winner won */
 .he-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
 .he-dot.legendary{background:var(--legendary);}
 .he-dot.epic{background:var(--purple-light);}
@@ -182,7 +319,8 @@ body::before{display:none;}
 .btn-clear{background:none;border:1px solid var(--border-bright);color:var(--text-dim);font-family:'Rajdhani',sans-serif;font-weight:600;font-size:10px;letter-spacing:1px;text-transform:uppercase;border-radius:4px;padding:4px 10px;cursor:pointer;transition:all .2s;}
 .btn-clear:hover{border-color:var(--red-light);color:var(--red-light);}
 
-/* MODAL */
+/* ── MODAL OVERLAY ──────────────────────────────────────────────── */
+/* Shared backdrop for settings and confirm dialogs */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:500;backdrop-filter:blur(4px);opacity:0;pointer-events:none;transition:opacity .25s;}
 .overlay.show{opacity:1;pointer-events:all;}
 .modal{background:var(--bg-card);border:1px solid var(--border-bright);border-radius:10px;padding:24px;width:480px;max-width:95vw;transform:translateY(12px);transition:transform .25s;max-height:90vh;overflow-y:auto;}
@@ -209,124 +347,259 @@ body::before{display:none;}
 .btn-modal.danger:hover{background:var(--red-light);}
 .modal-body-text{font-size:13px;color:var(--text-secondary);line-height:1.6;margin:10px 0 18px;}
 
-/* STATUS TOAST */
+/* ── TOAST NOTIFICATIONS ────────────────────────────────────────── */
+/* Brief pop-up messages shown at bottom-center of screen */
 .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--bg-card2);border:1px solid var(--border-bright);border-radius:6px;padding:8px 18px;font-family:'Share Tech Mono',monospace;font-size:11px;letter-spacing:1px;z-index:600;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap;}
 .toast.show{opacity:1;}
 .toast.ok{border-color:var(--green);color:var(--green-light);}
 .toast.err{border-color:var(--red-light);color:var(--red-light);}
 .toast.info{border-color:var(--gold-dim);color:var(--gold);}
+
+/* ── TOOLTIPS ───────────────────────────────────────────────────── */
+/*
+ * Custom tooltip system — applied to any element with data-tip attribute.
+ * The tooltip box is created once in JS and repositioned on hover.
+ * data-tip-title → bold gold header line
+ * data-tip-body  → secondary description text
+ */
+.tip-box{
+  position:fixed;
+  z-index:9000;
+  background:#0d1020;
+  border:1px solid var(--border-bright);
+  border-radius:6px;
+  padding:9px 12px;
+  max-width:230px;
+  pointer-events:none;  /* Never intercepts mouse events */
+  opacity:0;
+  transition:opacity .18s ease;
+  box-shadow:0 4px 20px rgba(0,0,0,.6);
+}
+.tip-box.show{opacity:1;}
+.tip-title{font-family:'Cinzel',serif;font-size:10px;color:var(--gold-light);letter-spacing:1px;margin-bottom:4px;}
+.tip-body{font-family:'Rajdhani',sans-serif;font-size:12px;color:var(--text-secondary);line-height:1.55;}
 </style>
 </head>
 <body>
 
-<!-- TITLEBAR -->
+<!--
+  ═══════════════════════════════════════════════════════════
+  TITLEBAR
+  Fixed top bar showing the app name, GitHub sync status,
+  and the Settings button. Purely presentational except for
+  the Settings button which opens the configuration modal.
+  ═══════════════════════════════════════════════════════════
+-->
 <div class="titlebar">
   <div class="tb-logo">
     <div class="logo-icon">☕</div>
     <div class="logo-text">Degens n' Coffee<small>Alliance Lottery System</small></div>
   </div>
   <div class="tb-right">
-    <div class="sync-indicator">
+    <!-- Sync dot + label — updated by setSyncStatus() in JS -->
+    <div class="sync-indicator" data-tip data-tip-title="Sync Status" data-tip-body="Shows the current connection status to your GitHub repository. Green = synced, Red = error, Gold = syncing in progress.">
       <div class="sync-dot" id="sync-dot"></div>
       <span id="sync-label">Not configured</span>
     </div>
-    <button class="btn-tb" onclick="openSettings()">⚙ Settings</button>
+    <!-- Opens the settings modal — required before any data loads -->
+    <button class="btn-tb" onclick="openSettings()" data-tip data-tip-title="Settings" data-tip-body="Configure your GitHub repository connection. You'll need your username, repo name, branch, and a Personal Access Token with Contents: Read & Write permission.">⚙ Settings</button>
   </div>
 </div>
 
-<!-- BODY -->
+<!--
+  ═══════════════════════════════════════════════════════════
+  MAIN APP BODY — Three-column CSS grid layout
+  ═══════════════════════════════════════════════════════════
+-->
 <div class="app-body">
 
-  <!-- LEFT: PARTICIPANTS -->
+  <!--
+    LEFT PANEL: PARTICIPANTS
+    Displays all names loaded from participants.json.
+    Names that have won this round are faded and tagged "WON".
+    You can add/remove names here — changes save to GitHub automatically.
+  -->
   <div class="panel panel-left">
     <div class="panel-hdr">
       <span class="panel-title">Participants</span>
-      <span class="badge gold" id="p-badge">0</span>
+      <!-- Badge updates via renderParticipants() to show total count -->
+      <span class="badge gold" id="p-badge" data-tip data-tip-title="Participant Count" data-tip-body="Total number of participants loaded from your GitHub repo. Grayed-out names have already won in this round and won't be drawn again.">0</span>
     </div>
+
+    <!-- Search bar — filters the visible list, does not affect eligibility -->
     <div class="search-wrap">
-      <div class="search-bar">
+      <div class="search-bar" data-tip data-tip-title="Filter Participants" data-tip-body="Type to search and filter the participant list by name. This does not affect who is eligible — it's just for finding names quickly.">
         <span style="color:var(--text-dim);font-size:11px;">🔍</span>
         <input type="text" id="search-input" placeholder="Filter names…" oninput="renderParticipants()">
       </div>
     </div>
+
+    <!-- Scrollable list — populated dynamically by renderParticipants() -->
     <div class="participant-scroll" id="participant-list"></div>
+
+    <!-- Add new participant — saves to GitHub via saveParticipants() -->
     <div class="add-area">
       <div class="add-row">
-        <input class="input-field" type="text" id="new-name" placeholder="Add participant name…" onkeydown="if(event.key==='Enter')addParticipant()">
-        <button class="btn-add" onclick="addParticipant()">+</button>
+        <input class="input-field" type="text" id="new-name" placeholder="Add participant name…"
+          onkeydown="if(event.key==='Enter')addParticipant()"
+          data-tip data-tip-title="Add Participant"
+          data-tip-body="Type a name and press Enter or click + to add them. The name will be saved to your GitHub repo automatically if a token is configured.">
+        <button class="btn-add" onclick="addParticipant()"
+          data-tip data-tip-title="Add to List"
+          data-tip-body="Adds the typed name to the participant list and saves it to GitHub. Duplicate names are not allowed.">+</button>
       </div>
     </div>
-  </div>
+  </div><!-- /panel-left -->
 
-  <!-- CENTER -->
+  <!--
+    CENTER PANEL: PRIZE CONFIG + LOTTERY RESULTS
+    Top section: configure which prize tiers are active this round.
+    Middle: Run Lottery / New Round controls.
+    Bottom: animated winner reveal cards, then Discord copy button.
+  -->
   <div class="panel panel-center">
+
+    <!-- PRIZE TIER CONFIGURATION -->
     <div class="prize-config">
       <div class="config-label">Prize Tiers — click to toggle</div>
+
+      <!--
+        Default tier buttons — each maps to an entry in the TIERS array in JS.
+        Clicking toggles the .off class and updates state.tierEnabled[id].
+        TO CHANGE DEFAULT WINNER COUNTS: edit qty in the TIERS array in <script>.
+      -->
       <div class="tiers-row">
-        <div class="prize-tier legendary" id="tier-legendary" onclick="toggleTier('legendary')">
+        <div class="prize-tier legendary" id="tier-legendary" onclick="toggleTier('legendary')"
+          data-tip data-tip-title="Legendary Tier"
+          data-tip-body="Top prize tier. Draws 1 winner. Click to toggle on/off. Winners are drawn randomly from all eligible participants.">
           <div class="tier-check">✓</div><span class="tier-icon">👑</span><span class="tier-name">Legendary</span><span class="tier-qty-lbl">×1</span>
         </div>
-        <div class="prize-tier epic" id="tier-epic" onclick="toggleTier('epic')">
+        <div class="prize-tier epic" id="tier-epic" onclick="toggleTier('epic')"
+          data-tip data-tip-title="Epic Tier"
+          data-tip-body="Second prize tier. Draws 2 winners. Each winner is unique — no one can win more than once per round across any tier.">
           <div class="tier-check">✓</div><span class="tier-icon">💎</span><span class="tier-name">Epic</span><span class="tier-qty-lbl">×2</span>
         </div>
-        <div class="prize-tier elite" id="tier-elite" onclick="toggleTier('elite')">
+        <div class="prize-tier elite" id="tier-elite" onclick="toggleTier('elite')"
+          data-tip data-tip-title="Elite Tier"
+          data-tip-body="Third prize tier. Draws 5 winners. Toggle off any tier you don't want to include in this round's lottery.">
           <div class="tier-check">✓</div><span class="tier-icon">⚔️</span><span class="tier-name">Elite</span><span class="tier-qty-lbl">×5</span>
         </div>
-        <div class="prize-tier advanced" id="tier-advanced" onclick="toggleTier('advanced')">
+        <div class="prize-tier advanced" id="tier-advanced" onclick="toggleTier('advanced')"
+          data-tip data-tip-title="Advanced Tier"
+          data-tip-body="Entry-level prize tier. Draws 10 winners. You need at least as many eligible participants as total winners across all active tiers.">
           <div class="tier-check">✓</div><span class="tier-icon">🛡️</span><span class="tier-name">Advanced</span><span class="tier-qty-lbl">×10</span>
         </div>
       </div>
+
+      <!-- CUSTOM PRIZE ROW — add a one-off tier not in the default list -->
       <div class="custom-row">
-        <span class="custom-label">+ Custom:</span>
-        <input class="input-field" type="text" id="custom-name" placeholder="Prize name…" style="max-width:148px;font-size:12px;padding:5px 8px;">
-        <input class="input-field qty-input" type="number" id="custom-qty" value="1" min="1" max="50">
-        <button class="btn-sm-add" onclick="addCustomPrize()">+</button>
+        <span class="custom-label"
+          data-tip data-tip-title="Custom Prize"
+          data-tip-body="Create a one-off prize tier with any name and winner count. Great for special items, giveaways, or bonus rounds.">+ Custom:</span>
+        <input class="input-field" type="text" id="custom-name" placeholder="Prize name…"
+          style="max-width:148px;font-size:12px;padding:5px 8px;"
+          data-tip data-tip-title="Custom Prize Name"
+          data-tip-body="Enter the name of your custom prize (e.g. 'Nitro Boost', 'Mystery Box'). This will appear on the results card and Discord message.">
+        <input class="input-field qty-input" type="number" id="custom-qty" value="1" min="1" max="50"
+          data-tip data-tip-title="Winner Count"
+          data-tip-body="How many people will win this custom prize. Max 50. Make sure you have enough eligible participants to cover all tiers combined.">
+        <button class="btn-sm-add" onclick="addCustomPrize()"
+          data-tip data-tip-title="Add Custom Prize"
+          data-tip-body="Adds this custom tier to the lottery. It will appear as a chip below and be included when you click Run Lottery.">+</button>
       </div>
+      <!-- Custom prize chips appear here — rendered by renderCustomChips() -->
       <div class="custom-chips" id="custom-chips"></div>
-    </div>
+    </div><!-- /prize-config -->
 
+    <!-- RUN BAR -->
     <div class="run-bar">
-      <button class="btn-run" id="btn-run" onclick="runLottery()">⚡ Run Lottery</button>
-      <button class="btn-newround" onclick="newRound()">↺ New Round</button>
-      <div class="run-info">
-        <div class="run-round" id="round-display">Round 1</div>
-        <div class="run-sub">Current Round</div>
-        <div class="eligible-lbl" id="eligible-lbl">0 eligible</div>
-      </div>
-    </div>
+      <!-- Triggers runLottery() — disabled during animation and re-enabled after -->
+      <button class="btn-run" id="btn-run" onclick="runLottery()"
+        data-tip data-tip-title="Run Lottery"
+        data-tip-body="Randomly draws winners for all active prize tiers using a Fisher-Yates shuffle. Each person can only win once per round. Results animate in with a reveal sequence.">⚡ Run Lottery</button>
 
+      <!-- Resets winner flags so everyone is eligible for the next round -->
+      <button class="btn-newround" onclick="newRound()"
+        data-tip data-tip-title="New Round"
+        data-tip-body="Clears all winner flags so everyone is eligible again, then increments the round counter. The current round's results are already saved to history before resetting.">↺ New Round</button>
+
+      <div class="run-info">
+        <!-- Round number — incremented by newRound(), persisted in localStorage -->
+        <div class="run-round" id="round-display"
+          data-tip data-tip-title="Current Round"
+          data-tip-body="The round number increments each time you start a New Round. Round history is saved to your GitHub repo so you have a permanent record.">Round 1</div>
+        <div class="run-sub">Current Round</div>
+        <!-- Updated by renderParticipants() — shows non-winner count -->
+        <div class="eligible-lbl" id="eligible-lbl"
+          data-tip data-tip-title="Eligible Participants"
+          data-tip-body="The number of participants who haven't won yet this round. This must be equal to or greater than the total winners across all active prize tiers.">0 eligible</div>
+      </div>
+    </div><!-- /run-bar -->
+
+    <!--
+      RESULTS AREA
+      Before a lottery runs: shows the empty-state placeholder.
+      After running: shows animated result cards via runLottery().
+      Cards and winner chips fade/scale in with staggered JS delays.
+    -->
     <div class="results-area" id="results-area">
+      <!-- Empty state — hidden when results-grid is shown -->
       <div class="results-empty" id="results-empty">
         <div class="big-icon">🎲</div>
         <p>Configure prizes &amp; click Run Lottery</p>
         <p style="font-size:10px;margin-top:4px;opacity:.6;">Winners appear here with animation</p>
       </div>
+      <!-- Winner cards injected here by runLottery() — hidden until lottery runs -->
       <div class="results-grid" id="results-grid" style="display:none;"></div>
-    </div>
+    </div><!-- /results-area -->
 
+    <!-- DISCORD COPY BAR — enabled after a lottery run -->
     <div class="discord-bar">
-      <button class="btn-discord" id="btn-discord" onclick="copyDiscord()" disabled>💬 Copy for Discord</button>
+      <button class="btn-discord" id="btn-discord" onclick="copyDiscord()" disabled
+        data-tip data-tip-title="Copy for Discord"
+        data-tip-body="Copies a formatted announcement to your clipboard, ready to paste into Discord. Includes the round number, all prize tiers, and each winner's name with emoji icons.">💬 Copy for Discord</button>
+      <!-- Confirmation text — shown briefly after successful clipboard copy -->
       <span class="copy-confirm" id="copy-confirm">✓ Copied to clipboard!</span>
     </div>
-  </div>
+  </div><!-- /panel-center -->
 
-  <!-- RIGHT: HISTORY -->
+  <!--
+    RIGHT PANEL: WINNER HISTORY
+    Displays all past round results from history.json.
+    Newest round shown first. Entries show name, prize, and tier color dot.
+  -->
   <div class="panel panel-right">
     <div class="panel-hdr">
       <span class="panel-title">Winner History</span>
-      <span class="badge" id="history-badge">0</span>
+      <!-- Updates via renderHistory() to show cumulative winner count -->
+      <span class="badge" id="history-badge"
+        data-tip data-tip-title="Total Winners"
+        data-tip-body="The total number of winners recorded across all rounds. Full history is saved to history.json in your GitHub repo.">0</span>
     </div>
+    <!-- Scrollable history list — rendered by renderHistory() -->
     <div class="history-scroll" id="history-list">
       <div class="history-empty-msg">No winners recorded yet.<br>Run your first lottery!</div>
     </div>
     <div class="history-footer">
       <span class="hf-stat" id="hf-stat">0 rounds • 0 winners</span>
-      <button class="btn-clear" onclick="confirmClearHistory()">Clear All</button>
+      <!-- Requires confirmation before wiping all history from GitHub -->
+      <button class="btn-clear" onclick="confirmClearHistory()"
+        data-tip data-tip-title="Clear All History"
+        data-tip-body="Permanently deletes all winner records from every round and resets the history.json file in your GitHub repo. This cannot be undone — use with caution!">Clear All</button>
     </div>
-  </div>
-</div>
+  </div><!-- /panel-right -->
 
-<!-- SETTINGS MODAL -->
+</div><!-- /app-body -->
+
+<!--
+  ═══════════════════════════════════════════════════════════
+  SETTINGS MODAL
+  Collects GitHub connection details and stores them in
+  localStorage as 'dnc-cfg'. A PAT token is required for
+  any write operations (add/remove participants, save history).
+  Without a token the app operates in read-only mode.
+  ═══════════════════════════════════════════════════════════
+-->
 <div class="overlay" id="settings-overlay">
   <div class="modal">
     <div class="modal-title">⚙ Settings</div>
@@ -352,6 +625,7 @@ body::before{display:none;}
       <div class="modal-section-title">Personal Access Token (required for editing names)</div>
       <div class="modal-row">
         <label class="modal-label">GitHub PAT</label>
+        <!-- Stored as password field so it's not visible — saved to localStorage -->
         <input class="modal-input" type="password" id="cfg-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
         <div class="modal-hint">
           Without a token the app is read-only. To add/remove participants, generate a <strong>Fine-Grained Token</strong> with <strong>Contents: Read &amp; Write</strong> on your repo.<br><br>
@@ -363,19 +637,29 @@ body::before{display:none;}
     <div class="modal-section">
       <div class="modal-section-title">Actions</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <!-- Tests connection without saving — checks if participants.json is found -->
         <button class="btn-tb" style="padding:7px 14px;" onclick="testConnection()">🔌 Test Connection</button>
+        <!-- Forces a fresh pull from GitHub, discarding any local state changes -->
         <button class="btn-tb" style="padding:7px 14px;" onclick="forceSyncAll()">🔄 Force Re-sync</button>
       </div>
     </div>
 
     <div class="modal-btns">
       <button class="btn-modal cancel" onclick="closeSettings()">Cancel</button>
+      <!-- Saves cfg to localStorage, closes modal, then calls loadFromGitHub() -->
       <button class="btn-modal save" onclick="saveSettings()">Save &amp; Connect</button>
     </div>
   </div>
 </div>
 
-<!-- CONFIRM MODAL -->
+<!--
+  ═══════════════════════════════════════════════════════════
+  CONFIRM MODAL
+  A reusable yes/no dialog. Opened via openConfirm(title, body, callback).
+  The callback is stored in _confirmCb and called when user confirms.
+  Used for: New Round reset and Clear All History.
+  ═══════════════════════════════════════════════════════════
+-->
 <div class="overlay" id="confirm-overlay">
   <div class="modal" style="width:360px;">
     <div class="modal-title" id="confirm-title">Confirm</div>
@@ -387,29 +671,60 @@ body::before{display:none;}
   </div>
 </div>
 
-<!-- TOAST -->
+<!-- TOAST — single element reused for all toast notifications -->
 <div class="toast" id="toast"></div>
 
 <script>
-// ═══════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 // STATE
-// ═══════════════════════════════════════
+// ─────────────────────────────────────────────────────────────────
+// Single source of truth for the entire app. All UI reads from here.
+// Never mutate state directly in render functions — only in logic fns.
+//
+// participants  → array of {name, color} loaded from participants.json
+// winners       → Set of name strings who won in the current round
+//                 (used to exclude them from further draws + show "WON" tag)
+// roundNumber   → current round counter, persisted in localStorage
+// history       → array of round result objects from history.json
+// customPrizes  → temporary list of custom tiers added this session
+//                 (not persisted — reset on New Round)
+// tierEnabled   → which default prize tiers are currently toggled on
+// lastResults   → results of the most recent lottery run, used by copyDiscord()
+// ═══════════════════════════════════════════════════════════════════
 const state = {
-  participants: [],   // [{name, color}]
-  winners: new Set(), // names who won this round
+  participants: [],   // [{name: string, color: hex string}]
+  winners: new Set(), // Set<string> — names that won this round
   roundNumber: 1,
-  history: [],        // [{round, date, entries:[{name,prize,tierClass}]}]
-  customPrizes: [],   // [{name, qty}]
+  history: [],        // [{round, date, entries:[{name, prize, tierClass}]}]
+  customPrizes: [],   // [{name: string, qty: number}]
   tierEnabled: {legendary:true, epic:true, elite:true, advanced:true},
-  lastResults: null,
+  lastResults: null,  // {round, tiers:[{...tier, winners:[{name,color}]}]}
 };
 
+// GitHub connection config — loaded from localStorage on init
+// Stored as: localStorage['dnc-cfg'] = JSON string of this object
 let cfg = {owner:'', repo:'', branch:'main', token:''};
+
+// GitHub file SHAs — required by the GitHub API to update existing files.
+// Fetched automatically when files are loaded. Do not set manually.
 let fileSHAs = {participants:null, history:null};
 
-// ═══════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
 // TIER DEFINITIONS
-// ═══════════════════════════════════════
+// ─────────────────────────────────────────────────────────────────
+// Controls the default prize tiers shown in the UI.
+//
+// TO ADD A NEW DEFAULT TIER:
+//   Add an object: {id:'yourid', icon:'emoji', label:'Display Name', qty:N}
+//   Then add a corresponding .prize-tier.yourid CSS block and HTML button.
+//
+// TO CHANGE WINNER COUNTS:
+//   Edit the qty value for the relevant tier.
+//
+// TO RENAME A TIER:
+//   Edit label (display name) and update the HTML tier-name span.
+// ═══════════════════════════════════════════════════════════════════
 const TIERS = [
   {id:'legendary', icon:'👑', label:'Legendary', qty:1},
   {id:'epic',      icon:'💎', label:'Epic',      qty:2},
@@ -417,25 +732,48 @@ const TIERS = [
   {id:'advanced',  icon:'🛡️', label:'Advanced',  qty:10},
 ];
 
-// ═══════════════════════════════════════
-// COLORS
-// ═══════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
+// COLOR ASSIGNMENT
+// ─────────────────────────────────────────────────────────────────
+// Each participant gets a consistent color derived from their name.
+// The hash function converts the name into an index into PALETTE.
+// Same name always gets the same color — across sessions and devices.
+//
+// TO ADD MORE COLORS: append hex values to the PALETTE array.
+// ═══════════════════════════════════════════════════════════════════
 const PALETTE = ['#6c3fc5','#c8973a','#1e6fa8','#2db870','#d94444','#9b6ef0','#3a9fd4','#e8b84b','#1a7a4a','#a03060'];
+
 function colorFor(name) {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xFFFFFF;
   return PALETTE[Math.abs(h) % PALETTE.length];
 }
 
-// ═══════════════════════════════════════
-// GITHUB API
-// ═══════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
+// GITHUB API HELPERS
+// ─────────────────────────────────────────────────────────────────
+// The app communicates directly with GitHub's REST API from the browser.
+// No server or backend is needed — the PAT token authorizes requests.
+//
+// ghGet(path)              → reads a file, returns its decoded content + SHA
+// ghPut(path, data, sha)   → writes/updates a file (requires token + SHA)
+// b64decode(str)           → decodes base64 GitHub API response to JS object
+// ═══════════════════════════════════════════════════════════════════
+
+/** Build the headers required for all GitHub API requests */
 function ghHeaders() {
   const h = {'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};
   if (cfg.token) h['Authorization'] = `Bearer ${cfg.token}`;
   return h;
 }
 
+/**
+ * Read a file from the GitHub repo via the Contents API.
+ * Returns the full API response including content (base64) and sha.
+ * The ?t=timestamp cache-busts so we always get the latest version.
+ */
 async function ghGet(path) {
   const url = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}?ref=${cfg.branch}&t=${Date.now()}`;
   const res = await fetch(url, {headers: ghHeaders()});
@@ -443,11 +781,20 @@ async function ghGet(path) {
   return res.json();
 }
 
+/**
+ * Write or update a file in the GitHub repo.
+ * Requires a PAT token with Contents: Write permission.
+ * The sha parameter is mandatory when updating an existing file —
+ * GitHub uses it to prevent conflicts. It's stored in fileSHAs after each read.
+ *
+ * Returns the new SHA of the committed file (store this for future updates).
+ */
 async function ghPut(path, data, sha, message) {
   if (!cfg.token) throw new Error('No Personal Access Token — read-only mode');
+  // GitHub API requires file content as base64-encoded UTF-8 JSON
   const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2))));
   const body = {message, content: encoded, branch: cfg.branch};
-  if (sha) body.sha = sha;
+  if (sha) body.sha = sha; // Required when updating an existing file
   const res = await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}`, {
     method:'PUT', headers:{...ghHeaders(),'Content-Type':'application/json'}, body:JSON.stringify(body)
   });
@@ -456,17 +803,24 @@ async function ghPut(path, data, sha, message) {
     throw new Error(e.message || `GitHub write failed: ${res.status}`);
   }
   const d = await res.json();
-  return d.content.sha;
+  return d.content.sha; // Return new SHA for next update
 }
 
+/** Decode GitHub API base64 content (with line breaks) to a JS object */
 function b64decode(str) {
   return JSON.parse(decodeURIComponent(escape(atob(str.replace(/\n/g,'')))));
 }
 
+/**
+ * Load all data from GitHub on startup or after settings change.
+ * Reads participants.json and history.json, updates state, then re-renders.
+ * Also sets roundNumber based on highest round in history + 1.
+ */
 async function loadFromGitHub() {
   if (!cfg.owner || !cfg.repo) return;
   setSyncStatus('loading','Syncing…');
   try {
+    // Load participants — supports both plain strings and {name, color} objects
     const pf = await ghGet('participants.json');
     fileSHAs.participants = pf.sha;
     const pData = b64decode(pf.content);
@@ -474,10 +828,12 @@ async function loadFromGitHub() {
       typeof n === 'string' ? {name:n, color:colorFor(n)} : {name:n.name, color:n.color||colorFor(n.name)}
     );
 
+    // Load winner history
     const hf = await ghGet('history.json');
     fileSHAs.history = hf.sha;
     state.history = b64decode(hf.content);
 
+    // Derive the current round number from history
     if (state.history.length > 0) {
       state.roundNumber = Math.max(...state.history.map(r=>r.round)) + 1;
     }
@@ -491,6 +847,11 @@ async function loadFromGitHub() {
   }
 }
 
+/**
+ * Save the current participants list to GitHub.
+ * Only saves names (not colors) — colors are re-derived from names on load.
+ * Called automatically after addParticipant() and removeParticipant().
+ */
 async function saveParticipants(msg) {
   if (!cfg.owner || !cfg.repo || !cfg.token) return;
   setSyncStatus('loading','Saving…');
@@ -504,6 +865,10 @@ async function saveParticipants(msg) {
   }
 }
 
+/**
+ * Save the winner history array to GitHub.
+ * Called automatically after runLottery() and confirmClearHistory().
+ */
 async function saveHistory(msg) {
   if (!cfg.owner || !cfg.repo || !cfg.token) return;
   setSyncStatus('loading','Saving…');
@@ -516,14 +881,26 @@ async function saveHistory(msg) {
   }
 }
 
-// ═══════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
 // SETTINGS
-// ═══════════════════════════════════════
+// ─────────────────────────────────────────────────────────────────
+// GitHub config is stored in localStorage under the key 'dnc-cfg'.
+// Round number is stored separately under 'dnc-round'.
+// The token is stored in plaintext — do not share this device's
+// localStorage with untrusted users.
+// ═══════════════════════════════════════════════════════════════════
+
+/** Load saved config from localStorage into the cfg object */
 function loadCfg() {
   try { const s=localStorage.getItem('dnc-cfg'); if(s) cfg={...cfg,...JSON.parse(s)}; } catch(e){}
   const rn=localStorage.getItem('dnc-round'); if(rn) state.roundNumber=parseInt(rn)||1;
 }
+
+/** Save current cfg object to localStorage */
 function saveCfg() { localStorage.setItem('dnc-cfg',JSON.stringify(cfg)); }
+
+/** Open the settings modal and populate fields with current cfg values */
 function openSettings() {
   document.getElementById('cfg-owner').value=cfg.owner;
   document.getElementById('cfg-repo').value=cfg.repo;
@@ -531,7 +908,10 @@ function openSettings() {
   document.getElementById('cfg-token').value=cfg.token;
   document.getElementById('settings-overlay').classList.add('show');
 }
+
 function closeSettings() { document.getElementById('settings-overlay').classList.remove('show'); }
+
+/** Read modal fields, save config, close modal, and reload from GitHub */
 async function saveSettings() {
   cfg.owner=document.getElementById('cfg-owner').value.trim();
   cfg.repo=document.getElementById('cfg-repo').value.trim();
@@ -539,6 +919,11 @@ async function saveSettings() {
   cfg.token=document.getElementById('cfg-token').value.trim();
   saveCfg(); closeSettings(); await loadFromGitHub();
 }
+
+/**
+ * Test the GitHub connection using current modal field values (not saved cfg).
+ * Checks if participants.json exists in the repo — does not save anything.
+ */
 async function testConnection() {
   const owner=document.getElementById('cfg-owner').value.trim();
   const repo=document.getElementById('cfg-repo').value.trim();
@@ -556,16 +941,27 @@ async function testConnection() {
     else showToast(`⚠ Status ${res.status}`,'err');
   } catch(e){showToast('⚠ Network error','err');}
 }
+
+/** Close settings modal and reload everything from GitHub */
 async function forceSyncAll() { closeSettings(); await loadFromGitHub(); }
 
-// ═══════════════════════════════════════
-// PARTICIPANTS
-// ═══════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
+// PARTICIPANTS — RENDER & MUTATE
+// ─────────────────────────────────────────────────────────────────
+// renderParticipants() rebuilds the entire list from state.participants.
+// It respects the current search filter and state.winners Set.
+// addParticipant() and removeParticipant() both call saveParticipants()
+// to persist changes to GitHub immediately.
+// ═══════════════════════════════════════════════════════════════════
+
+/** Rebuild the participant list UI from state, filtering by search input */
 function renderParticipants() {
   const list=document.getElementById('participant-list');
   const q=document.getElementById('search-input').value.toLowerCase();
   const filtered=state.participants.filter(p=>p.name.toLowerCase().includes(q));
   if(!filtered.length) {
+    // Show empty state — different message depending on whether list is empty or just filtered
     list.innerHTML=`<div class="list-empty">${!state.participants.length?'No participants yet.<br>Add names below.':'No matches found.'}</div>`;
   } else {
     list.innerHTML=filtered.map(p=>{
@@ -578,15 +974,18 @@ function renderParticipants() {
       </div>`;
     }).join('');
   }
+  // Update badge and eligible count
   const eligible=state.participants.filter(p=>!state.winners.has(p.name)).length;
   document.getElementById('p-badge').textContent=state.participants.length;
   document.getElementById('eligible-lbl').textContent=`${eligible} eligible`;
 }
 
+/** Add a new participant from the input field and save to GitHub */
 async function addParticipant() {
   const inp=document.getElementById('new-name');
   const name=inp.value.trim();
   if(!name){return;}
+  // Prevent duplicate names (case-insensitive check)
   if(state.participants.find(p=>p.name.toLowerCase()===name.toLowerCase())){
     showToast('Name already in list','err'); return;
   }
@@ -596,16 +995,23 @@ async function addParticipant() {
   await saveParticipants(`Add: ${name}`);
 }
 
+/** Remove a participant by name and save to GitHub */
 async function removeParticipant(name) {
   state.participants=state.participants.filter(p=>p.name!==name);
-  state.winners.delete(name);
+  state.winners.delete(name); // Also clear any "won" state for this name
   renderParticipants();
   await saveParticipants(`Remove: ${name}`);
 }
 
-// ═══════════════════════════════════════
-// PRIZE TIERS
-// ═══════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
+// PRIZE TIERS — TOGGLE & CUSTOM
+// ─────────────────────────────────────────────────────────────────
+// Default tiers can be toggled on/off by clicking their pill buttons.
+// Custom prizes are temporary (not saved to GitHub) and reset each round.
+// ═══════════════════════════════════════════════════════════════════
+
+/** Toggle a default prize tier on or off */
 function toggleTier(id) {
   state.tierEnabled[id]=!state.tierEnabled[id];
   const el=document.getElementById(`tier-${id}`);
@@ -613,6 +1019,7 @@ function toggleTier(id) {
   el.querySelector('.tier-check').textContent=state.tierEnabled[id]?'✓':'';
 }
 
+/** Add a custom prize from the custom prize input fields */
 function addCustomPrize() {
   const nameEl=document.getElementById('custom-name');
   const qtyEl=document.getElementById('custom-qty');
@@ -624,21 +1031,37 @@ function addCustomPrize() {
   renderCustomChips();
 }
 
+/** Remove a custom prize by its index in state.customPrizes */
 function removeCustomPrize(i) {
   state.customPrizes.splice(i,1);
   renderCustomChips();
 }
 
+/** Rebuild the custom prize chip list from state.customPrizes */
 function renderCustomChips() {
   document.getElementById('custom-chips').innerHTML=state.customPrizes.map((p,i)=>
     `<div class="custom-chip">${esc(p.name)} ×${p.qty}<button class="cc-del" onclick="removeCustomPrize(${i})">✕</button></div>`
   ).join('');
 }
 
-// ═══════════════════════════════════════
-// LOTTERY
-// ═══════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
+// LOTTERY ENGINE
+// ─────────────────────────────────────────────────────────────────
+// runLottery() is the core function. It:
+//   1. Validates that at least one tier is active
+//   2. Builds the eligible pool (participants not in state.winners)
+//   3. Shuffles the pool using Fisher-Yates (unbiased, uniform distribution)
+//   4. Draws winners from the shuffled pool for each tier in order
+//   5. Animates result cards and winner chips into view
+//   6. Saves the round to history.json on GitHub
+//
+// Fisher-Yates shuffle guarantees that every permutation is equally
+// likely — no name is more likely to win than another.
+// ═══════════════════════════════════════════════════════════════════
+
 async function runLottery() {
+  // Build the full list of active tiers (defaults + custom)
   const activeTiers=TIERS.filter(t=>state.tierEnabled[t.id]);
   const allTiers=[
     ...activeTiers,
@@ -646,18 +1069,20 @@ async function runLottery() {
   ];
   if(!allTiers.length){showToast('Enable at least one prize tier','err');return;}
 
+  // Filter out participants who already won this round
   const pool=state.participants.filter(p=>!state.winners.has(p.name));
   const needed=allTiers.reduce((s,t)=>s+t.qty,0);
   if(!pool.length){showToast('No eligible participants — start a new round','err');return;}
   if(pool.length<needed){showToast(`Need ${needed} participants, only ${pool.length} eligible`,'err');return;}
 
-  // Fisher-Yates shuffle
+  // Fisher-Yates shuffle — creates a randomly ordered copy of the pool
   const shuffled=[...pool];
   for(let i=shuffled.length-1;i>0;i--){
     const j=Math.floor(Math.random()*(i+1));
     [shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]];
   }
 
+  // Prepare results area — hide placeholder, show grid
   document.getElementById('results-empty').style.display='none';
   const grid=document.getElementById('results-grid');
   grid.style.display='grid'; grid.innerHTML='';
@@ -667,17 +1092,21 @@ async function runLottery() {
   const roundEntries=[];
   state.lastResults={round:state.roundNumber, tiers:[]};
 
+  // Draw winners tier by tier, animating each card and chip in sequence
   for(let ti=0;ti<allTiers.length;ti++){
     const tier=allTiers[ti];
     const tierWinners=[];
+
+    // Pick winners for this tier from the front of the shuffled pool
     for(let w=0;w<tier.qty;w++){
       const winner=shuffled[idx++];
       tierWinners.push(winner);
-      state.winners.add(winner.name);
+      state.winners.add(winner.name); // Mark as won for this round
       roundEntries.push({name:winner.name, prize:tier.label, tierClass:tier.isCustom?'custom':tier.id});
     }
     state.lastResults.tiers.push({...tier, winners:tierWinners});
 
+    // Create result card element
     const card=document.createElement('div');
     const tierClass=tier.isCustom?'custom-tier':tier.id;
     card.className=`result-card ${tierClass}`;
@@ -690,9 +1119,11 @@ async function runLottery() {
       <div class="card-winners" id="cw-${ti}"></div>`;
     grid.appendChild(card);
 
+    // Stagger card appearance — first card immediate, rest delayed
     await delay(ti===0?0:280);
     card.classList.add('visible');
 
+    // Animate winner chips in one by one
     const wc=document.getElementById(`cw-${ti}`);
     for(let wi=0;wi<tierWinners.length;wi++){
       const p=tierWinners[wi];
@@ -705,12 +1136,13 @@ async function runLottery() {
     }
   }
 
+  // Build and prepend history entry, then save to GitHub
   const histEntry={
     round:state.roundNumber,
     date:new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),
     entries:roundEntries
   };
-  state.history.unshift(histEntry);
+  state.history.unshift(histEntry); // Most recent round first
   localStorage.setItem('dnc-round',state.roundNumber);
   renderHistory();
   renderParticipants();
@@ -719,11 +1151,18 @@ async function runLottery() {
   await saveHistory(`Round ${state.roundNumber} complete`);
 }
 
+/** Simple async delay helper used for animation sequencing */
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 
-// ═══════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
 // NEW ROUND
-// ═══════════════════════════════════════
+// ─────────────────────────────────────────────────────────────────
+// Resets winner tracking so all participants are eligible again.
+// Does NOT change participants.json — just clears the in-memory Set.
+// Round number increments and is saved to localStorage.
+// Custom prizes from this session are also cleared.
+// ═══════════════════════════════════════════════════════════════════
 function newRound() {
   openConfirm(
     'Start New Round?',
@@ -745,9 +1184,14 @@ function newRound() {
   );
 }
 
-// ═══════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
 // DISCORD COPY
-// ═══════════════════════════════════════
+// ─────────────────────────────────────────────────────────────────
+// Formats state.lastResults into a Discord-ready markdown message
+// and copies it to the clipboard using the Clipboard API.
+// The format uses Discord bold (**text**) and bullet points (•).
+// ═══════════════════════════════════════════════════════════════════
 function copyDiscord() {
   if(!state.lastResults) return;
   const r=state.lastResults;
@@ -767,9 +1211,15 @@ function copyDiscord() {
   }).catch(()=>showToast('Clipboard blocked — copy manually','err'));
 }
 
-// ═══════════════════════════════════════
-// HISTORY
-// ═══════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
+// HISTORY PANEL
+// ─────────────────────────────────────────────────────────────────
+// Renders state.history into the right panel list.
+// History is an array of round objects, displayed newest-first.
+// Each round shows its number, date, and a row per winner.
+// ═══════════════════════════════════════════════════════════════════
+
 function renderHistory() {
   const list=document.getElementById('history-list');
   if(!state.history.length){
@@ -798,6 +1248,7 @@ function renderHistory() {
   document.getElementById('round-display').textContent=`Round ${state.roundNumber}`;
 }
 
+/** Ask for confirmation then wipe history.json on GitHub */
 function confirmClearHistory() {
   openConfirm(
     'Clear All History?',
@@ -811,26 +1262,50 @@ function confirmClearHistory() {
   );
 }
 
-// ═══════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
 // CONFIRM MODAL
-// ═══════════════════════════════════════
+// ─────────────────────────────────────────────────────────────────
+// A generic confirmation dialog with title, body text, and a callback.
+// Only one confirm dialog can be open at a time (_confirmCb holds it).
+// ═══════════════════════════════════════════════════════════════════
 let _confirmCb=null;
+
 function openConfirm(title,body,cb) {
   document.getElementById('confirm-title').textContent=title;
   document.getElementById('confirm-body').textContent=body;
   _confirmCb=cb;
   document.getElementById('confirm-overlay').classList.add('show');
 }
-function closeConfirm() { document.getElementById('confirm-overlay').classList.remove('show'); _confirmCb=null; }
-document.getElementById('confirm-ok').addEventListener('click',()=>{closeConfirm(); if(_confirmCb)_confirmCb();});
 
-// ═══════════════════════════════════════
-// SYNC STATUS / TOAST
-// ═══════════════════════════════════════
+function closeConfirm() {
+  document.getElementById('confirm-overlay').classList.remove('show');
+  _confirmCb=null;
+}
+
+// Wire up the confirm button to call the stored callback
+document.getElementById('confirm-ok').addEventListener('click',()=>{
+  closeConfirm();
+  if(_confirmCb)_confirmCb();
+});
+
+
+// ═══════════════════════════════════════════════════════════════════
+// SYNC STATUS & TOAST NOTIFICATIONS
+// ─────────────────────────────────────────────────────────────────
+// setSyncStatus(state, label) — updates the dot color and label text
+//   state: 'ok' | 'err' | 'loading'
+//
+// showToast(message, type) — shows a brief notification at bottom center
+//   type: 'ok' | 'err' | 'info'
+//   Auto-dismisses after 3.2 seconds.
+// ═══════════════════════════════════════════════════════════════════
+
 function setSyncStatus(s,label) {
   document.getElementById('sync-dot').className=`sync-dot ${s}`;
   document.getElementById('sync-label').textContent=label;
 }
+
 let _toastTimer=null;
 function showToast(msg,type='info') {
   const t=document.getElementById('toast');
@@ -839,21 +1314,106 @@ function showToast(msg,type='info') {
   _toastTimer=setTimeout(()=>t.classList.remove('show'),3200);
 }
 
-// ═══════════════════════════════════════
-// UTILS
-// ═══════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
+// UTILITY FUNCTIONS
+// ─────────────────────────────────────────────────────────────────
+// esc(s)  → escapes HTML special chars for safe innerHTML injection
+// escQ(s) → escapes backslashes and single quotes for use in
+//           inline onclick="removeParticipant('...')" attributes
+// ═══════════════════════════════════════════════════════════════════
 const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const escQ=s=>String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
 
+/** Re-render all dynamic UI sections */
 function renderAll() {
   renderParticipants();
   renderHistory();
   document.getElementById('round-display').textContent=`Round ${state.roundNumber}`;
 }
 
-// ═══════════════════════════════════════
-// INIT
-// ═══════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
+// TOOLTIP SYSTEM
+// ─────────────────────────────────────────────────────────────────
+// A single floating .tip-box element is created and repositioned
+// on mouseover. Any element with data-tip attribute participates.
+//
+// data-tip-title → bold header shown in gold
+// data-tip-body  → descriptive text below the title
+//
+// The box auto-flips above the element if it would overflow the bottom
+// of the viewport, and clamps horizontally to stay on screen.
+//
+// TO ADD A TOOLTIP to any element:
+//   <div data-tip data-tip-title="Title Here" data-tip-body="Description here">
+// ═══════════════════════════════════════════════════════════════════
+(function initTooltips(){
+  // Create one shared tooltip box and append to body
+  const box = document.createElement('div');
+  box.className = 'tip-box';
+  box.innerHTML = '<div class="tip-title" id="tip-title"></div><div class="tip-body" id="tip-body"></div>';
+  document.body.appendChild(box);
+
+  let hideTimer = null;
+
+  function showTip(el) {
+    clearTimeout(hideTimer);
+    const title = el.dataset.tipTitle || '';
+    const body  = el.dataset.tipBody  || '';
+    if (!title && !body) return;
+
+    document.getElementById('tip-title').textContent = title;
+    document.getElementById('tip-body').innerHTML = body;
+
+    // Reset visibility before repositioning to avoid flicker
+    box.classList.remove('show');
+
+    // Calculate position: centered below the target element
+    const r = el.getBoundingClientRect();
+    const bw = 242, gap = 10;
+    let left = r.left + r.width / 2 - bw / 2;
+    let top  = r.bottom + gap;
+
+    // Flip above if too close to bottom of viewport
+    if (top + 120 > window.innerHeight) top = r.top - gap - 10;
+
+    // Clamp horizontally so tooltip stays on screen
+    left = Math.max(8, Math.min(left, window.innerWidth - bw - 8));
+
+    box.style.left  = left + 'px';
+    box.style.top   = top  + 'px';
+    box.style.width = bw   + 'px';
+
+    requestAnimationFrame(() => { box.classList.add('show'); });
+  }
+
+  function hideTip() {
+    // Small delay prevents flickering when moving between child elements
+    hideTimer = setTimeout(() => box.classList.remove('show'), 120);
+  }
+
+  // Delegate events from document — works for dynamically added elements too
+  document.addEventListener('mouseover', e => {
+    const el = e.target.closest('[data-tip]');
+    if (el) showTip(el);
+  });
+  document.addEventListener('mouseout', e => {
+    const el = e.target.closest('[data-tip]');
+    if (el) hideTip();
+  });
+  document.addEventListener('scroll', hideTip, true);
+})();
+
+
+// ═══════════════════════════════════════════════════════════════════
+// INITIALIZATION
+// ─────────────────────────────────────────────────────────────────
+// On page load:
+//   1. Load saved GitHub config from localStorage
+//   2. If configured, fetch data from GitHub
+//   3. If not configured, show empty state and prompt to open Settings
+// ═══════════════════════════════════════════════════════════════════
 (async function init(){
   loadCfg();
   if(cfg.owner&&cfg.repo){
